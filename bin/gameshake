@@ -1,0 +1,225 @@
+#!/usr/bin/env python
+
+import base64
+import codecs
+from datetime import datetime
+from functools import wraps
+import json
+from hashlib import md5, sha1
+import hmac
+import logging
+import os
+from os.path import join, isdir, isfile
+import random
+import sys
+import time
+from urllib import urlencode
+from urlparse import parse_qsl, urlunsplit, urljoin, urlsplit
+import webbrowser
+from xml.etree import ElementTree
+
+import httplib2
+import oauth2 as oauth
+from termtool import Termtool, subcommand, argument
+
+
+class SignedHttp(httplib2.Http):
+
+    def __init__(self, args, cache=None, timeout=None, proxy_info=None):
+        httplib2.Http.__init__(self, cache, timeout, proxy_info)
+        self.site = 'https://mlkshk.com/'
+        self.api_key = args.mlkshk_key
+        self.api_secret = args.mlkshk_secret
+        self.access_token, self.access_secret = args.mlkshk_access_token.split(':', 1)
+
+    def sign_request(self, uri, method):
+        timestamp = int(time.mktime(datetime.utcnow().timetuple()))
+        # you might want to generate better nonces
+        nonce = md5("%s" % random.random()).hexdigest()
+
+        uri = urljoin(self.site, uri)
+        logging.debug("Signing request for URL %s", uri)
+        uriparts = urlsplit(uri)
+        if ':' in uriparts.netloc:
+            host, port = uriparts.netloc.split(':', 1)
+        else:
+            host, port = uriparts.netloc, '80'  # even if it's https (API bug)
+
+        normalized_string = '\n'.join((self.access_token, str(timestamp), nonce, method, host, port, uriparts.path))
+        normalized_string += '\n'  # plus a trailing nl for the path
+        # note, we're not including the query string because there isn't one.
+
+        # now we sign the request
+        digest = hmac.new(self.access_secret.encode('ascii'), normalized_string, sha1).digest()
+        signature = base64.encodestring(digest).strip() # we strip the end off because it gives us a \n at the end
+        authorization_string = 'MAC token="%s", timestamp="%s", nonce="%s", signature="%s"' % (self.access_token, str(timestamp), nonce, signature)
+
+        return uri, authorization_string
+
+    def request(self, uri, method="GET", body='', headers=None,
+        redirections=httplib2.DEFAULT_MAX_REDIRECTS, connection_type=None):
+
+        headers = {} if headers is None else dict(headers)
+        uri, headers['Authorization'] = self.sign_request(uri, method)
+        return httplib2.Http.request(self, uri, method, body, headers, redirections, connection_type)
+
+
+def authd(fn):
+    @wraps(fn)
+    def moo(self, args):
+        csr = oauth.Consumer(*args.tumblr_key.split(':', 1))
+        token = oauth.Token(*args.tumblr_access_token.split(':', 1))
+        tumblr = oauth.Client(csr, token)
+
+        mlkshk = SignedHttp(args)
+
+        return fn(self, args, tumblr, mlkshk)
+    return moo
+
+
+@argument('--tumblr-key', help='Tumblr application API key (in `token:secret` format)')
+@argument('--tumblr-access-token', help='Tumblr access token (in `token:secret` format)')
+@argument('--mlkshk-key', help='MLKSHK application API key')
+@argument('--mlkshk-secret', help='MLKSHK application API secret')
+@argument('--mlkshk-access-token', help='MLKSHK access token (in `token:secret` format)')
+class Gameshake(Termtool):
+
+    description = 'Post MLKSHK game trailers posts to the gameshake tumblr.'
+
+    @subcommand(help='configures the API keys')
+    def configure(self, args):
+
+        print "Configured!"
+
+    def post_video(self, client, video, tweet=True):
+        video_url = video.get('url')
+        if not video_url:
+            return
+
+        post_options = {
+            'type': 'video',
+            'markdown': 'yes',
+            'embed': video_url,
+            'date': video['posted_at'].replace('T', ' ').replace('Z', ' GMT'),
+        }
+        if video.get('description'):
+            post_options['caption'] = video['description'].encode('utf8')
+        if not tweet:
+            post_options['tweet'] = 'off'
+
+        api_url = urlunsplit(('http', 'api.tumblr.com', '/v2/blog/gameshake.tumblr.com/post', None, None))
+        resp, cont = client.request(api_url, method='POST', body=urlencode(post_options), headers={'Content-Type': 'application/x-www-form-urlencoded'})
+
+        self.raise_error(resp, cont)
+
+    @argument('--last-update', help='ID of the last video posted to the blog')
+    @subcommand(help='update the gameshake blog from the game trailers shake')
+    @authd
+    def update(self, args, tumblr, mlkshk):
+        # Get the videos from the shake.
+        resp, cont = mlkshk.request('/api/shakes/10267')
+        self.raise_error(resp, cont)
+        data = json.loads(cont)
+
+        # Which are the ones since the last update?
+        last_update = args.last_update
+        videos = list()
+        for video in data['sharedfiles']:
+            if video['sharekey'] == last_update:
+                break
+            videos.append(video)
+        last_update = videos[0]['sharekey']
+
+        # Post all the new ones.
+        for video in videos:
+            self.post_video(tumblr, video)
+
+        # Remember the last update.
+        self.write_config_file(
+            '--tumblr-key', args.tumblr_key,
+            '--tumblr-access-token', args.tumblr_access_token,
+            '--mlkshk-key', args.mlkshk_key,
+            '--mlkshk-secret', args.mlkshk_secret,
+            '--mlkshk-access-token', args.mlkshk_access_token,
+            '--last-update', last_update
+        )
+
+    @subcommand(help='save backlog of shake posts')
+    @authd
+    def savebacklog(self, args, tumblr, mlkshk):
+        if not isdir('videos'):
+            os.mkdir('videos')
+
+        resp, cont = mlkshk.request('/api/shakes/10267')
+        self.raise_error(resp, cont)
+        data = json.loads(cont)
+
+        while data.get('sharedfiles'):
+            sharedfiles = data['sharedfiles']
+
+            for video in sharedfiles:
+                filename = 'videos/%s.json' % video['sharekey']
+                with codecs.open(filename, 'w', 'utf8') as f:
+                    json.dump(video, f)
+
+            last_sharekey = sharedfiles[-1]['sharekey']
+            resp, cont = mlkshk.request('/api/shakes/10267/before/%s' % last_sharekey)
+            self.raise_error(resp, cont)
+            data = json.loads(cont)
+            print "Got shake page before %s with %d items" % (
+                last_sharekey, len(data.get('sharedfiles', ())))
+
+    @subcommand(help='import the backlog of posts')
+    @authd
+    def postbacklog(self, args, tumblr, mlkshk):
+        if not isdir('videos/posted'):
+            os.mkdir('videos/posted')
+
+        for filename in os.listdir('videos'):
+            filepath = join('videos', filename)
+            if not isfile(filepath):
+                continue
+
+            with codecs.open(filepath, 'r', 'utf8') as f:
+                video = json.load(f)
+
+            try:
+                self.post_video(tumblr, video, tweet=False)
+            except Exception:
+                print "Errored on video: %r" % video
+                raise
+            os.rename(filepath, join('videos', 'posted', filename))
+
+    def raise_error(self, resp, cont):
+        if resp.status < 400:
+            return
+
+        print "%d %s" % (resp.status, resp.reason)
+        from pprint import pprint
+        pprint(resp)
+        print cont
+
+        raise ValueError('unexpected http response')
+
+    @subcommand(help='delete all the posts from the tumblr site')
+    @authd
+    def burnblog(self, args, tumblr, mlkshk):
+        while True:
+            api_url = urlunsplit(('https', 'api.tumblr.com', '/v2/blog/gameshake.tumblr.com/posts/video', None, None))
+            resp, cont = tumblr.request(api_url)
+            self.raise_error(resp, cont)
+            data = json.loads(cont)
+            posts = data['response']['posts']
+
+            if not posts:
+                break
+
+            for post in posts:
+                query = {'id': post['id']}
+                api_url = urlunsplit(('http', 'api.tumblr.com', '/v2/blog/gameshake.tumblr.com/posts', None, None))
+                resp, cont = tumblr.request(api_url, method='POST', body=urlencode(query), headers={'Content-Type': 'application/x-www-form-urlencoded'})
+                self.raise_error(resp, cont)
+
+
+if __name__ == '__main__':
+    Gameshake().run()
