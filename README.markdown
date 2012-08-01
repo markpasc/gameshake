@@ -1,6 +1,8 @@
-# tumblrout #
+# gameshake #
 
-`tumblrout` is a command line tool for exporting a Tumblr blog to local files.
+`gameshake` is a command line tool for mirroring a MLKSHK shake to a Tumblr blog. It's a mashup of the [`tumblrout`](https://github.com/markpasc/tumblrout) and [`mlkshk-term`](https://github.com/markpasc/mlkshk-term) tools.
+
+This won't actually be useful to anyone else, but I stuck it on GitHub anyway.
 
 
 ## Installation ##
@@ -18,24 +20,9 @@ If you don't want to install its dependencies system-wide, try installing it in 
 
 ## Configuring ##
 
-First, you'll need a Tumblr API key. Register an application on [the Applications page of tumblr.com](http://www.tumblr.com/oauth/apps) to get a key. Once you have a key, run the `configure` command:
-
-    $ tumblrout configure
-    OAuth Consumer Key: 68-A
-    Secret Key: f73D85A83def7BC29580FEB9f087A69Bc6bfacd1DDDBEBfb2bAF52c1
-
-    OAuth Verifier: 13b24c7D485A9C4e99F1B4b163ddAE6eE4b9917e
-    Configured!
-
-After entering your secret key, the authorization page should open in your web browser. After approving your app, copy the `oauth_verifier` from the URL of the resulting page and paste it at the `OAuth Verifier:` prompt.
+Use the `tumblrout` and `mlkshk-term` tools' `configure` commands to get some keys, then copy them from the `~/.tumblrout` and `~/.mlkshk` config files into a `~/.gameshake` config file instead. Note the argument names in `gameshake` start with `--tumblr-` or `--mlkshk-` as appropriate.
 
 
 ## Usage ##
 
-See `tumblrout --help` for supported commands.
-
-    $ tumblrout -v verify
-    INFO: Set log level to INFO
-    INFO: Verified!
-
-    $
+See `gameshake --help` for supported commands.

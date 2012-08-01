@@ -1,12 +1,12 @@
 from setuptools import setup
 
 setup(
-    name='tumblrout',
+    name='gameshake',
     version='1.0',
     packages=[],
     include_package_data=True,
-    scripts=['bin/tumblrout'],
+    scripts=['bin/gameshake'],
 
-    requires=['termtool', 'httplib2', 'oauth2'],
-    install_requires=['termtool', 'httplib2', 'oauth2'],
+    requires=['termtool', 'httplib2', 'oauth2', 'progressbar', 'prettytable'],
+    install_requires=['termtool', 'httplib2', 'oauth2', 'progressbar', 'prettytable'],
 )
