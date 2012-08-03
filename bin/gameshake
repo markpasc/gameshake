@@ -82,6 +82,7 @@ def authd(fn):
 @argument('--mlkshk-key', help='MLKSHK application API key')
 @argument('--mlkshk-secret', help='MLKSHK application API secret')
 @argument('--mlkshk-access-token', help='MLKSHK access token (in `token:secret` format)')
+@argument('--last-update', help='ID of the last video posted to the blog')
 class Gameshake(Termtool):
 
     description = 'Post MLKSHK game trailers posts to the gameshake tumblr.'
@@ -112,7 +113,6 @@ class Gameshake(Termtool):
 
         self.raise_error(resp, cont)
 
-    @argument('--last-update', help='ID of the last video posted to the blog')
     @subcommand(help='update the gameshake blog from the game trailers shake')
     @authd
     def update(self, args, tumblr, mlkshk):
