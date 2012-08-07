@@ -71,9 +71,13 @@ def authd(fn):
         token = oauth.Token(*args.tumblr_access_token.split(':', 1))
         tumblr = oauth.Client(csr, token)
 
+        csr = oauth.Consumer(*args.twitter_key.split(':', 1))
+        token = oauth.Token(*args.twitter_access_token.split(':', 1))
+        twitter = oauth.Client(csr, token)
+
         mlkshk = SignedHttp(args)
 
-        return fn(self, args, tumblr, mlkshk)
+        return fn(self, args, tumblr, mlkshk, twitter)
     return moo
 
 
@@ -82,6 +86,8 @@ def authd(fn):
 @argument('--mlkshk-key', help='MLKSHK application API key')
 @argument('--mlkshk-secret', help='MLKSHK application API secret')
 @argument('--mlkshk-access-token', help='MLKSHK access token (in `token:secret` format)')
+@argument('--twitter-key', help='Twitter application API key (in `token:secret` format)')
+@argument('--twitter-access-token', help='Twitter access token (in `token:secret` format)')
 @argument('--last-update', help='ID of the last video posted to the blog')
 class Gameshake(Termtool):
 
@@ -92,7 +98,7 @@ class Gameshake(Termtool):
 
         print "Configured!"
 
-    def post_video(self, client, video, tweet=True):
+    def post_video(self, tumblr, video, twitter=None):
         video_url = video.get('url')
         if not video_url:
             return
@@ -102,20 +108,33 @@ class Gameshake(Termtool):
             'markdown': 'yes',
             'embed': video_url,
             'date': video['posted_at'].replace('T', ' ').replace('Z', ' GMT'),
+            'tweet': 'off',
         }
         if video.get('description'):
             post_options['caption'] = video['description'].encode('utf8')
-        if not tweet:
-            post_options['tweet'] = 'off'
 
         api_url = urlunsplit(('http', 'api.tumblr.com', '/v2/blog/gameshake.tumblr.com/post', None, None))
-        resp, cont = client.request(api_url, method='POST', body=urlencode(post_options), headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        resp, cont = tumblr.request(api_url, method='POST', body=urlencode(post_options), headers={'Content-Type': 'application/x-www-form-urlencoded'})
+
+        self.raise_error(resp, cont)
+
+        if twitter is None:
+            return
+
+        data = json.loads(cont)
+        post_id = data['response']['id']
+
+        api_url = 'https://api.twitter.com/1/statuses/update.json'
+        post_options = {
+            'status': u"%s http://gameshake.tumblr.com/post/%d" % (video.get('title', 'Video'), post_id),
+        }
+        resp, cont = twitter.request(api_url, method='POST', body=urlencode(post_options), headers={'Content-Type': 'application/x-www-form-urlencoded'})
 
         self.raise_error(resp, cont)
 
     @subcommand(help='update the gameshake blog from the game trailers shake')
     @authd
-    def update(self, args, tumblr, mlkshk):
+    def update(self, args, tumblr, mlkshk, twitter):
         # Get the videos from the shake.
         resp, cont = mlkshk.request('/api/shakes/10267')
         self.raise_error(resp, cont)
@@ -136,7 +155,7 @@ class Gameshake(Termtool):
 
         # Post all the new ones.
         for video in videos:
-            self.post_video(tumblr, video)
+            self.post_video(tumblr, video, twitter=twitter)
 
         # Remember the last update.
         self.write_config_file(
@@ -145,12 +164,14 @@ class Gameshake(Termtool):
             '--mlkshk-key', args.mlkshk_key,
             '--mlkshk-secret', args.mlkshk_secret,
             '--mlkshk-access-token', args.mlkshk_access_token,
+            '--twitter-key', args.twitter_key,
+            '--twitter-access-token', args.twitter_access_token,
             '--last-update', last_update
         )
 
     @subcommand(help='save backlog of shake posts')
     @authd
-    def savebacklog(self, args, tumblr, mlkshk):
+    def savebacklog(self, args, tumblr, mlkshk, twitter):
         if not isdir('videos'):
             os.mkdir('videos')
 
@@ -175,7 +196,7 @@ class Gameshake(Termtool):
 
     @subcommand(help='import the backlog of posts')
     @authd
-    def postbacklog(self, args, tumblr, mlkshk):
+    def postbacklog(self, args, tumblr, mlkshk, twitter):
         if not isdir('videos/posted'):
             os.mkdir('videos/posted')
 
@@ -188,7 +209,7 @@ class Gameshake(Termtool):
                 video = json.load(f)
 
             try:
-                self.post_video(tumblr, video, tweet=False)
+                self.post_video(tumblr, video)
             except Exception:
                 print "Errored on video: %r" % video
                 raise
@@ -207,7 +228,7 @@ class Gameshake(Termtool):
 
     @subcommand(help='delete all the posts from the tumblr site')
     @authd
-    def burnblog(self, args, tumblr, mlkshk):
+    def burnblog(self, args, tumblr, mlkshk, twitter):
         while True:
             api_url = urlunsplit(('https', 'api.tumblr.com', '/v2/blog/gameshake.tumblr.com/posts/video', None, None))
             resp, cont = tumblr.request(api_url)
