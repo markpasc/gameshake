@@ -2,7 +2,7 @@
 
 import base64
 import codecs
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import json
 from hashlib import md5, sha1
@@ -144,10 +144,16 @@ class Gameshake(Termtool):
         # Which are the ones since the last update?
         last_update = args.last_update
         videos = list()
+        five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
         for video in data['sharedfiles']:
+            # Look at all the new videos since the last update.
             if video['sharekey'] == last_update:
                 break
-            videos.append(video)
+
+            # But ignore ones not yet five minutes old.
+            posted_at = datetime.strptime(video['posted_at'], '%Y-%m-%dT%H:%M:%SZ')
+            if posted_at <= five_minutes_ago:
+                videos.append(video)
 
         if not videos:
             return
