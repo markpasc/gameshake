@@ -23,6 +23,10 @@ import oauth2 as oauth
 from termtool import Termtool, subcommand, argument
 
 
+class RequestError(Exception):
+    pass
+
+
 class SignedHttp(httplib2.Http):
 
     def __init__(self, args, cache=None, timeout=None, proxy_info=None):
@@ -61,7 +65,18 @@ class SignedHttp(httplib2.Http):
 
         headers = {} if headers is None else dict(headers)
         uri, headers['Authorization'] = self.sign_request(uri, method)
-        return httplib2.Http.request(self, uri, method, body, headers, redirections, connection_type)
+        try:
+            try:
+                resp, cont = httplib2.Http.request(self, uri, method, body, headers, redirections, connection_type)
+            except httplib.BadStatusLine, exc:
+                trace = sys.exc_info()[2]
+                raise RequestError("%s: %s" % (type(exc), str(exc))), None, trace
+            if resp.status == 502:
+                raise RequestError("Received HTTP response %d %s" % (resp.status, resp.reason))
+        except RequestError:
+            logging.debug("Encountered expected error talking to mlkshk: %s", str(exc))
+            raise
+        return resp, cont
 
 
 def authd(fn):
@@ -137,7 +152,10 @@ class Gameshake(Termtool):
     @authd
     def update(self, args, tumblr, mlkshk, twitter):
         # Get the videos from the shake.
-        resp, cont = mlkshk.request('/api/shakes/10267')
+        try:
+            resp, cont = mlkshk.request('/api/shakes/10267')
+        except RequestError:
+            return
         self.raise_error(resp, cont)
         data = json.loads(cont)
 
@@ -182,7 +200,10 @@ class Gameshake(Termtool):
         if not isdir('videos'):
             os.mkdir('videos')
 
-        resp, cont = mlkshk.request('/api/shakes/10267')
+        try:
+            resp, cont = mlkshk.request('/api/shakes/10267')
+        except RequestError:
+            return
         self.raise_error(resp, cont)
         data = json.loads(cont)
 
