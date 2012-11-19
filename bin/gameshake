@@ -7,6 +7,7 @@ from functools import wraps
 import json
 from hashlib import md5, sha1
 import hmac
+import httplib
 import logging
 import os
 from os.path import join, isdir, isfile
@@ -73,7 +74,7 @@ class SignedHttp(httplib2.Http):
                 raise RequestError("%s: %s" % (type(exc), str(exc))), None, trace
             if resp.status == 502:
                 raise RequestError("Received HTTP response %d %s" % (resp.status, resp.reason))
-        except RequestError:
+        except RequestError, exc:
             logging.debug("Encountered expected error talking to mlkshk: %s", str(exc))
             raise
         return resp, cont
