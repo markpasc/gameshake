@@ -31,7 +31,7 @@ class RequestError(Exception):
 class SignedHttp(httplib2.Http):
 
     def __init__(self, args, cache=None, timeout=None, proxy_info=None):
-        httplib2.Http.__init__(self, cache, timeout, proxy_info)
+        httplib2.Http.__init__(self, cache, timeout, proxy_info, disable_ssl_certificate_validation=True)
         self.site = 'https://mlkshk.com/'
         self.api_key = args.mlkshk_key
         self.api_secret = args.mlkshk_secret
