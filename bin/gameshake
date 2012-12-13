@@ -130,7 +130,11 @@ class Gameshake(Termtool):
             post_options['caption'] = video['description'].encode('utf8')
 
         api_url = urlunsplit(('http', 'api.tumblr.com', '/v2/blog/gameshake.tumblr.com/post', None, None))
-        resp, cont = tumblr.request(api_url, method='POST', body=urlencode(post_options), headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        try:
+            resp, cont = tumblr.request(api_url, method='POST', body=urlencode(post_options), headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        except httplib2.ServerNotFoundError, exc:
+            logging.warning("Not posting video to Tumblr due to %s: %s", type(exc).__name__, str(exc))
+            return
 
         self.raise_error(resp, cont)
 
