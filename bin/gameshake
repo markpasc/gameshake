@@ -12,6 +12,7 @@ import logging
 import os
 from os.path import join, isdir, isfile
 import random
+import socket
 import sys
 import time
 from urllib import urlencode
@@ -69,7 +70,7 @@ class SignedHttp(httplib2.Http):
         try:
             try:
                 resp, cont = httplib2.Http.request(self, uri, method, body, headers, redirections, connection_type)
-            except httplib.BadStatusLine, exc:
+            except (httplib.BadStatusLine, socket.error), exc:
                 trace = sys.exc_info()[2]
                 raise RequestError("%s: %s" % (type(exc), str(exc))), None, trace
             if resp.status == 401 and "Duplicate nonce" in resp['WWW-Authenticate']:
