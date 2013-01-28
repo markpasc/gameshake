@@ -76,7 +76,7 @@ class SignedHttp(httplib2.Http):
             if resp.status == 401 and "Duplicate nonce" in resp['WWW-Authenticate']:
                 # TODO: we could not redirect/whatever and try again buuut let's just run the script again later.
                 raise RequestError("Rerequested with the same nonce and got a 401, oops")
-            if resp.status == 502:
+            if resp.status in (500, 502):
                 raise RequestError("Received HTTP response %d %s" % (resp.status, resp.reason))
         except RequestError, exc:
             logging.debug("Encountered expected error talking to mlkshk: %s", str(exc))
